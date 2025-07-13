@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>AudioServer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 30px auto;
+      padding: 0 15px;
+    }
+    .menu {
+      margin-bottom: 20px;
+    }
+    .menu button {
+      padding: 8px 12px;
+      margin-right: 6px;
+      border: 1px solid #007bff;
+      background-color: white;
+      color: #007bff;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .menu button.active {
+      background-color: #007bff;
+      color: white;
+    }
+    #content {
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 4px;
+      min-height: 300px;
+    }
+    ul {
+      list-style:none; padding-left:0;
+    }
+    ul li {
+      margin-bottom: 12px;
+    }
+    img {
+      width: 50px;
+      height: 50px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+    button.delete-btn {
+      margin-left: 10px;
+      cursor: pointer;
+      background-color: #dc3545;
+      border: none;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    button.play-btn {
+      margin-left: 10px;
+      cursor: pointer;
+      background-color: #28a745;
+      border: none;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    input[type="text"], input[type="number"], input[type="file"] {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+      box-sizing: border-box;
+    }
+    button.submit-btn {
+      padding: 8px 12px;
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    audio {
+      ---vertical-align: middle;
+      margin-left: 10px;
+      max-width: 300px;
+      display: block;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Аудіосервер</h1>
+
+  <div class="menu">
+    <button class="tab-btn active" data-tab="main">Головна</button>
+    <button class="tab-btn" data-tab="artists">Виконавці</button>
+    <button class="tab-btn" data-tab="albums">Альбоми</button>
+    <button class="tab-btn" data-tab="create">Створення</button>
+  </div>
+
+  <div id="content"></div>
+
+  <script>
+    const STORAGE = {
+      artists: 'artists',
+      albums: 'albums',
+      tracks: 'tracks',
+    };
+
+    function loadData(key) {
+      const d = localStorage.getItem(key);
+      return d ? JSON.parse(d) : [];
+    }
+
+    function saveData(key, data) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    function getFileDataURL(file) {
+      return new Promise(resolve => {
+        if (!file) resolve(null);
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function nextId(array) {
+      if (array.length === 0) return 1;
+      return Math.max(...array.map(x => x.id)) + 1;
+    }
+
+    const TABS = {
+      main: `
+        <h2>Головна</h2>
+        <p>Ласкаво просимо на аудіосервер!</p>
+      `,
+
+      artists: `
+        <h2>Виконавці</h2>
+        <ul id="artists-list"></ul>
+      `,
+
+      albums: `
+        <h2>Альбоми</h2>
+        <ul id="albums-list"></ul>
+        <div id="album-tracks"></div>
+      `,
+
+      create: `
+        <h2>Створення</h2>
+
+        <form id="create-artist-form" enctype="multipart/form-data">
+          <div class="form-group">
+            <label>Ім’я виконавця</label>
+            <input type="text" name="name" placeholder="Введіть ім’я" required />
+          </div>
+          <div class="form-group">
+            <label>Фото виконавця</label>
+            <input type="file" name="photo" accept="image/*" />
+          </div>
+          <button class="submit-btn" type="submit">Створити виконавця</button>
+        </form>
+
+        <hr>
+
+        <form id="create-album-form" enctype="multipart/form-data">
+          <div class="form-group">
+            <label>Назва альбому</label>
+            <input type="text" name="name" placeholder="Введіть назву" required />
+          </div>
+          <div class="form-group">
+            <label>ID виконавця (існуючий)</label>
+            <input type="number" name="artist_id" placeholder="Введіть ID" required min="1" />
+          </div>
+          <div class="form-group">
+            <label>Фото альбому</label>
+            <input type="file" name="photo" accept="image/*" />
+          </div>
+          <button class="submit-btn" type="submit">Створити альбом</button>
+        </form>
+
+        <hr>
+
+        <form id="upload-track-form" enctype="multipart/form-data">
+          <div class="form-group">
+            <label>Назва пісні</label>
+            <input type="text" name="title" placeholder="Введіть назву" required />
+          </div>
+          <div class="form-group">
+            <label>ID альбому (існуючий)</label>
+            <input type="number" name="album_id" placeholder="Введіть ID" required min="1" />
+          </div>
+          <div class="form-group">
+            <label>Файл пісні</label>
+            <input type="file" name="file" accept="audio/*" required />
+          </div>
+          <button class="submit-btn" type="submit">Завантажити пісню</button>
+        </form>
+      `
+    };
+
+    function renderTab(name) {
+      const content = document.getElementById('content');
+      content.innerHTML = TABS[name];
+      if(name === 'artists') renderArtists();
+      else if(name === 'albums') renderAlbums();
+      else if(name === 'create') setupCreateForms();
+    }
+
+    function renderArtists() {
+      const artists = loadData(STORAGE.artists);
+      const list = document.getElementById('artists-list');
+      list.innerHTML = '';
+      if(artists.length === 0) {
+        list.innerHTML = '<li>Ще немає виконавців</li>';
+        return;
+      }
+      artists.forEach(artist => {
+        const li = document.createElement('li');
+
+        const img = document.createElement('img');
+        img.src = artist.photo || 'https://via.placeholder.com/50?text=No+Img';
+        img.alt = artist.name;
+
+        const span = document.createElement('span');
+        span.textContent = `ID ${artist.id}: ${artist.name}`;
+
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Видалити';
+        btnDel.className = 'delete-btn';
+        btnDel.onclick = () => {
+          if(confirm(`Видалити виконавця "${artist.name}"? Видаляться також його альбоми та пісні.`)) {
+            let artists = loadData(STORAGE.artists);
+            artists = artists.filter(a => a.id !== artist.id);
+            saveData(STORAGE.artists, artists);
+
+            let albums = loadData(STORAGE.albums);
+            const albumsToDelete = albums.filter(alb => alb.artist_id === artist.id).map(alb => alb.id);
+            albums = albums.filter(alb => alb.artist_id !== artist.id);
+            saveData(STORAGE.albums, albums);
+
+            let tracks = loadData(STORAGE.tracks);
+            tracks = tracks.filter(tr => !albumsToDelete.includes(tr.album_id));
+            saveData(STORAGE.tracks, tracks);
+
+            renderArtists();
+          }
+        };
+
+        li.appendChild(img);
+        li.appendChild(span);
+        li.appendChild(btnDel);
+        list.appendChild(li);
+      });
+    }
+
+    function renderAlbums() {
+      const albums = loadData(STORAGE.albums);
+      const artists = loadData(STORAGE.artists);
+      const list = document.getElementById('albums-list');
+      const tracksDiv = document.getElementById('album-tracks');
+      list.innerHTML = '';
+      tracksDiv.innerHTML = '';
+
+      if(albums.length === 0) {
+        list.innerHTML = '<li>Ще немає альбомів</li>';
+        return;
+      }
+      albums.forEach(album => {
+        const li = document.createElement('li');
+        li.style.cursor = 'pointer';
+
+        const img = document.createElement('img');
+        img.src = album.photo || 'https://via.placeholder.com/50?text=No+Img';
+        img.alt = album.name;
+
+        const artist = artists.find(a => a.id === album.artist_id);
+        const artistName = artist ? artist.name : 'Невідомий виконавець';
+
+        const span = document.createElement('span');
+        span.textContent = `ID ${album.id}: ${album.name} (${artistName})`;
+
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Видалити';
+        btnDel.className = 'delete-btn';
+        btnDel.onclick = (e) => {
+          e.stopPropagation();
+          if(confirm(`Видалити альбом "${album.name}"? Видаляться також пісні.`)) {
+            let albums = loadData(STORAGE.albums);
+            albums = albums.filter(a => a.id !== album.id);
+            saveData(STORAGE.albums, albums);
+
+            let tracks = loadData(STORAGE.tracks);
+            tracks = tracks.filter(t => t.album_id !== album.id);
+            saveData(STORAGE.tracks, tracks);
+
+            renderAlbums();
+          }
+        };
+
+        li.appendChild(img);
+        li.appendChild(span);
+        li.appendChild(btnDel);
+        li.onclick = () => showAlbumTracks(album.id);
+        list.appendChild(li);
+      });
+    }
+
+    function showAlbumTracks(albumId) {
+      const tracksDiv = document.getElementById('album-tracks');
+      const tracks = loadData(STORAGE.tracks).filter(t => t.album_id === albumId);
+      if(tracks.length === 0) {
+        tracksDiv.innerHTML = '<p>У цьому альбомі ще немає пісень</p>';
+        return;
+      }
+      let html = `<h3>Пісні альбому:</h3><ul>`;
+      tracks.forEach(track => {
+        html += `<li>${track.title} 
+          <audio controls src="${track.file}" preload="none"></audio>
+          <button class="delete-btn" onclick="deleteTrack(${track.id}); event.stopPropagation();">Видалити</button>
+          </li>`;
+      });
+      html += '</ul>';
+      tracksDiv.innerHTML = html;
+    }
+
+    window.deleteTrack = function(id) {
+      if(!confirm('Видалити цю пісню?')) return;
+      let tracks = loadData(STORAGE.tracks);
+      tracks = tracks.filter(t => t.id !== id);
+      saveData(STORAGE.tracks, tracks);
+      renderAlbums();
+    };
+
+    function setupCreateForms() {
+      const artistForm = document.getElementById('create-artist-form');
+      artistForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(artistForm);
+        const name = formData.get('name').trim();
+        if (!name) return alert('Введіть ім’я виконавця');
+
+        const photoFile = formData.get('photo');
+        const photoData = await getFileDataURL(photoFile);
+
+        let artists = loadData(STORAGE.artists);
+        const newArtist = {
+          id: nextId(artists),
+          name,
+          photo: photoData
+        };
+        artists.push(newArtist);
+        saveData(STORAGE.artists, artists);
+
+        alert('Виконавця створено');
+        artistForm.reset();
+      };
+
+      const albumForm = document.getElementById('create-album-form');
+      albumForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(albumForm);
+        const name = formData.get('name').trim();
+        const artist_id = Number(formData.get('artist_id'));
+        if (!name) return alert('Введіть назву альбому');
+        if (!artist_id) return alert('Введіть ID виконавця');
+
+        const artists = loadData(STORAGE.artists);
+        if (!artists.find(a => a.id === artist_id)) {
+          return alert('Виконавця з таким ID не знайдено');
+        }
+
+        const photoFile = formData.get('photo');
+        const photoData = await getFileDataURL(photoFile);
+
+        let albums = loadData(STORAGE.albums);
+        const newAlbum = {
+          id: nextId(albums),
+          name,
+          artist_id,
+          photo: photoData
+        };
+        albums.push(newAlbum);
+        saveData(STORAGE.albums, albums);
+
+        alert('Альбом створено');
+        albumForm.reset();
+      };
+
+      const trackForm = document.getElementById('upload-track-form');
+      trackForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(trackForm);
+        const title = formData.get('title').trim();
+        const album_id = Number(formData.get('album_id'));
+        if (!title) return alert('Введіть назву пісні');
+        if (!album_id) return alert('Введіть ID альбому');
+
+        const albums = loadData(STORAGE.albums);
+        if (!albums.find(a => a.id === album_id)) {
+          return alert('Альбом з таким ID не знайдено');
+        }
+
+        const file = formData.get('file');
+        if (!file || file.size === 0) return alert('Оберіть аудіофайл');
+
+        const fileData = await getFileDataURL(file);
+
+        let tracks = loadData(STORAGE.tracks);
+        const newTrack = {
+          id: nextId(tracks),
+          title,
+          album_id,
+          file: fileData
+        };
+        tracks.push(newTrack);
+        saveData(STORAGE.tracks, tracks);
+
+        alert('Пісню завантажено');
+        trackForm.reset();
+      };
+    }
+
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTab(btn.dataset.tab);
+      });
+    });
+
+    renderTab('main');
+  </script>
+
+</body>
+</html>
